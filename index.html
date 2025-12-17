@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日期计算器</title>
+  <style>
+    :root {
+      --bg: linear-gradient(160deg, #050505, #0f0f0f 45%, #141414);
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-stroke: rgba(255, 255, 255, 0.12);
+      --text: #f5f5f5;
+      --muted: #9ca3af;
+      --white: #ffffff;
+      --band: rgba(255, 149, 0, 0.18); /* iPhone calculator-like orange */
+      --band-stroke: rgba(255, 149, 0, 0.8);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "San Francisco", "PingFang SC", sans-serif;
+    }
+
+    .page {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(480px, 1fr) minmax(180px, 240px) minmax(480px, 1fr);
+      gap: 8px;
+      align-items: start;
+      justify-items: center;
+    }
+
+    .shell[data-picker="left"] {
+      justify-self: end;
+      transform: translateX(-10%);
+    }
+
+    .shell[data-picker="right"] {
+      justify-self: start;
+      transform: translateX(10%);
+    }
+
+    .shell {
+      width: 70%;
+      max-width: 860px;
+      background: var(--panel);
+      border: 1px solid var(--panel-stroke);
+      border-radius: 18px;
+      padding: 22px 22px 18px;
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+      position: relative;
+      backdrop-filter: blur(14px);
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 24px;
+      letter-spacing: 0.3px;
+      text-align: center;
+    }
+
+    p.sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .wheels {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .selection-band {
+      position: absolute;
+      top: calc(50% + 18px);
+      left: -8px;
+      right: -8px;
+      height: 48px;
+      transform: translateY(-50%);
+      background: var(--band);
+      border-radius: 12px;
+      border: 1px solid var(--band-stroke);
+      box-shadow: 0 0 14px rgba(0, 0, 0, 0.28);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .wheel {
+      position: relative;
+      height: 336px; /* 7 行 x 48px */
+      overflow-y: auto;
+      scroll-snap-type: none;
+      border-radius: 14px;
+      border: none;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0 4px;
+      cursor: grab;
+      user-select: none;
+      scrollbar-width: none; /* Firefox */
+    }
+
+    .wheel::-webkit-scrollbar { display: none; }
+
+    .wheel.dragging {
+      cursor: grabbing;
+      scroll-snap-type: none;
+    }
+
+    .wheel-label {
+      text-align: center;
+      margin: 6px 0 10px;
+      color: var(--muted);
+      letter-spacing: 3px;
+      font-size: 12px;
+    }
+
+    .wheel-track {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .wheel-item {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      letter-spacing: 0.5px;
+      color: var(--text);
+      scroll-snap-align: none;
+      opacity: 0.55;
+      transition: none;
+    }
+
+    .wheel.ready .wheel-item {
+      transition: opacity 0.12s ease, transform 0.12s ease;
+    }
+
+    .wheel-item.active {
+      opacity: 1;
+    }
+
+    .wheel.no-anim .wheel-item {
+      transition: none !important;
+    }
+
+
+    .actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    button.primary {
+      background: var(--white);
+      color: #111;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+    }
+
+    button.secondary {
+      background: var(--band-stroke);
+      color: #fff;
+      border: 1px solid var(--band-stroke);
+    }
+
+    button:hover { transform: translateY(0); }
+    button:active { transform: translateY(1px); box-shadow: none; }
+
+    .time-input {
+      font-size: 23px;
+      text-align: center;
+      background: rgba(255, 149, 0, 0.08);
+      border: 1px solid var(--band-stroke);
+      border-radius: 12px;
+      padding: 11px 13px;
+      color: var(--text);
+      width: 269px;
+      margin: 0 auto 16px auto;
+      display: block;
+      transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .reset-btn {
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      font-size: 16px;
+    }
+
+    .reset-btn:hover {
+      background: #d4974f;
+      border-color: #d4974f;
+    }
+
+    .reset-btn:active {
+      background: #b5762a;
+      border-color: #b5762a;
+    }
+
+    .time-input:focus {
+      outline: none;
+      border-color: var(--band-stroke);
+      box-shadow: 0 0 0 3px rgba(255, 149, 0, 0.18);
+      background: rgba(255, 149, 0, 0.12);
+      color: var(--text);
+    }
+
+    .summary {
+      background: none;
+      border: none;
+      border-radius: 0;
+      padding: 0 10px;
+      box-shadow: none;
+      backdrop-filter: none;
+      min-height: auto;
+      text-align: center;
+      max-width: 220px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      align-self: center;
+      gap: 10px;
+      transform: translate(7%, 10%);
+    }
+
+    @media (max-width: 1100px) {
+      .page {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .summary {
+        max-width: 240px;
+        min-height: 120px;
+      }
+      .shell {
+        max-width: 100%;
+      }
+    }
+
+    .summary-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .summary .stub-btn {
+      width: 65px;
+      height: 65px;
+      border-radius: 50%;
+      border: 1px solid #cd8534;
+      background: #cd8534;
+      cursor: pointer;
+      color: #fff;
+      font-size: 54px;
+      font-weight: 200;
+      font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Microsoft YaHei", Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translateX(-20%);
+    }
+
+    .summary .stub-btn .inner {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transform: translateY(-5%);
+    }
+
+    .summary .stub-btn:last-child {
+      transform: translate(5%, -8%);
+      border-radius: 16px; /* 等号仍保持圆角矩形 */
+    }
+
+    .summary .stub-btn.stub-static {
+      cursor: default;
+      pointer-events: none;
+      background: transparent;
+      border-color: transparent;
+      color: #ffffff;
+      box-shadow: none;
+      font-weight: 200;
+    }
+
+    .summary .stub-btn:hover {
+      background: #d4974f;
+      border-color: #d4974f;
+    }
+
+    .summary .stub-btn:active {
+      background: #b5762a;
+      border-color: #b5762a;
+      transform: translateX(-20%); /* 不再整体下移，避免内符号反向位移 */
+    }
+
+    .summary .stub-btn:last-child:active {
+      transform: translateX(20%);
+    }
+
+    .summary .stub-btn:active .inner {
+      transform: translateY(-5%);
+    }
+
+    .summary h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: 0.2px;
+      color: var(--text);
+    }
+
+    .summary p {
+      margin: 0;
+      color: var(--text);
+      font-size: 18px;
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .metric-input {
+      font-size: 23px;
+      color: var(--text);
+      font-weight: 400;
+      width: 120px;
+      text-align: center;
+      background: rgba(255, 149, 0, 0.08);
+      border: 1px solid var(--band-stroke);
+      border-radius: 12px;
+      padding: 11px 13px;
+      margin-right: 8px;
+      transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .metric-input:focus {
+      outline: none;
+      border-color: var(--band-stroke);
+      box-shadow: 0 0 0 3px rgba(255, 149, 0, 0.18);
+      background: rgba(255, 149, 0, 0.12);
+      color: var(--text);
+    }
+
+    @media (max-width: 560px) {
+      body { padding: 18px; }
+      .wheels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="shell" data-picker="left">
+      <input class="time-input" aria-label="日期输入 YYYY/MM/DD" placeholder="YYYY/MM/DD" />
+      <div class="wheels">
+        <div class="selection-band"></div>
+        <div>
+          <div class="wheel-label">年</div>
+          <div class="wheel" data-wheel="year">
+            <div class="wheel-track"></div>
+          </div>
+        </div>
+        <div>
+          <div class="wheel-label">月</div>
+          <div class="wheel" data-wheel="month">
+            <div class="wheel-track"></div>
+          </div>
+        </div>
+        <div>
+          <div class="wheel-label">日</div>
+          <div class="wheel" data-wheel="day">
+            <div class="wheel-track"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="secondary reset-btn">设为今日</button>
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="summary-row">
+        <button class="stub-btn" id="diff-sign" aria-label="差值正负"><span class="inner">+</span></button>
+        <div>
+          <p><input class="metric-input" id="diff-days" data-unit="days" aria-label="天数差" value="--"> 天</p>
+          <p><input class="metric-input" id="diff-weeks" data-unit="weeks" aria-label="周数差" value="--"> 周</p>
+          <p><input class="metric-input" id="diff-months" data-unit="months" aria-label="月数差" value="--"> 月</p>
+          <p><input class="metric-input" id="diff-years" data-unit="years" aria-label="年数差" value="--"> 年</p>
+        </div>
+        <div class="stub-btn stub-static" aria-hidden="false"><span class="inner">=</span></div>
+      </div>
+    </div>
+
+    <div class="shell" data-picker="right">
+      <input class="time-input" aria-label="日期输入 YYYY/MM/DD" placeholder="YYYY/MM/DD" />
+      <div class="wheels">
+        <div class="selection-band"></div>
+        <div>
+          <div class="wheel-label">年</div>
+          <div class="wheel" data-wheel="year">
+            <div class="wheel-track"></div>
+          </div>
+        </div>
+        <div>
+          <div class="wheel-label">月</div>
+          <div class="wheel" data-wheel="month">
+            <div class="wheel-track"></div>
+          </div>
+        </div>
+        <div>
+          <div class="wheel-label">日</div>
+          <div class="wheel" data-wheel="day">
+            <div class="wheel-track"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="secondary reset-btn">设为今日</button>
+      </div>
+    </div>
+  </div>
+
+  
+<script>
+  const ITEM_HEIGHT = 48;
+  const LOOP_COUNT = 1; // 非无限滚轮：仅保留首尾，不再首尾相连
+  const MINUS_SIGN = '-'; // 使用细一点的 ASCII 减号，保持与等号视觉一致
+  const PLUS_SIGN = '+';
+  const yearValues = Array.from({ length: 201 }, (_, i) => (1900 + i).toString());
+  const monthValues = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+  let lastDiffUnit = 'days';
+
+  function enableDragScroll(el, wheelRef) {
+    let dragging = false;
+    let startY = 0;
+    let startTop = 0;
+    let frameReq = null;
+    const applyDelta = (delta) => {
+      el.scrollTop = startTop - delta;
+      wheelRef.refreshLook();
+    };
+    const schedule = (delta) => {
+      if (frameReq) cancelAnimationFrame(frameReq);
+      frameReq = requestAnimationFrame(() => applyDelta(delta));
+    };
+    el.addEventListener('pointerdown', (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      dragging = true;
+      wheelRef.dragging = true;
+      startY = event.clientY;
+      startTop = el.scrollTop;
+      el.classList.add('dragging');
+      el.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+    const stop = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      wheelRef.dragging = false;
+      el.classList.remove('dragging');
+      el.releasePointerCapture?.(event.pointerId);
+      wheelRef.refreshLook();
+      wheelRef.queueSnap();
+      if (frameReq) cancelAnimationFrame(frameReq);
+    };
+    el.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      const delta = event.clientY - startY;
+      schedule(delta);
+      event.preventDefault();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => el.addEventListener(type, stop));
+  }
+
+  class Wheel {
+    constructor(el, { values, value, onChange, bandCenter }) {
+      this.el = el;
+      this.track = el.querySelector('.wheel-track');
+      this.onChange = onChange;
+      this.pad = 0; // 不再填充占位项，改用内边距来居中首尾
+      this.padSize = 0;
+      this.itemHeight = ITEM_HEIGHT;
+      this.bandCenter = bandCenter ?? (this.el.clientHeight / 2);
+      this.dragging = false;
+      this.setValues(values, value ?? values[0], true);
+      this.bind();
+      this.refreshLook();
+      requestAnimationFrame(() => this.el.classList.add('ready'));
+    }
+
+    bind() {
+      this.el.addEventListener('scroll', () => {
+        this.refreshLook();
+        if (this.dragging) return;
+        this.queueSnap();
+      });
+      this.el.addEventListener('touchend', () => this.queueSnap());
+      this.el.addEventListener('wheel', () => this.queueSnap());
+      this.el.addEventListener('mouseup', () => this.queueSnap());
+    }
+
+    setValues(values, desiredValue, silent = false) {
+      this.values = [...values];
+      this.loopCount = LOOP_COUNT;
+      this.render();
+      const target = desiredValue !== undefined && this.values.includes(desiredValue)
+        ? desiredValue
+        : this.values[0];
+      this.setValue(target, silent);
+      this.refreshLook();
+    }
+
+    render() {
+      this.track.innerHTML = '';
+      // 让首尾项中心对齐到横条中心：pad = bandCenter - 半行高
+      const padSize = this.bandCenter - (this.itemHeight / 2);
+      this.padSize = padSize;
+      this.track.style.paddingTop = `${padSize}px`;
+      this.track.style.paddingBottom = `${padSize}px`;
+      const list = [];
+      for (let l = 0; l < this.loopCount; l += 1) this.values.forEach((v) => list.push(v));
+      list.forEach((val) => {
+        const div = document.createElement('div');
+        div.className = 'wheel-item';
+        div.dataset.value = val;
+        div.textContent = val;
+        this.track.appendChild(div);
+      });
+    }
+
+    indexForValue(value) {
+      const idx = this.values.indexOf(value);
+      if (idx === -1) return null;
+      const centerLoop = Math.floor(this.loopCount / 2);
+      return this.pad + centerLoop * this.values.length + idx;
+    }
+
+    updateActive(targetIndex) {
+      const items = Array.from(this.track.querySelectorAll('.wheel-item'));
+      items.forEach((item, idx) => item.classList.toggle('active', idx === targetIndex));
+    }
+
+    setValue(value, silent = false) {
+      if (!this.values.includes(value)) return;
+      this.value = value;
+      const targetIndex = this.indexForValue(value);
+      if (targetIndex == null) return;
+      // 让目标项的中心落在横条中心
+      const nextTop = this.padSize + targetIndex * this.itemHeight + (this.itemHeight / 2) - this.bandCenter;
+      this.silent = true;
+      this.el.scrollTop = nextTop;
+      this.updateActive(targetIndex);
+      this.refreshLook();
+      requestAnimationFrame(() => { this.silent = false; });
+      if (!silent && this.onChange) this.onChange(value);
+    }
+
+    queueSnap() {
+      if (this.silent) return;
+      clearTimeout(this.snapTimer);
+      this.snapTimer = setTimeout(() => this.snapToNearest(), 90);
+    }
+
+    snapToNearest() {
+      const snapIndex = Math.round(
+        (this.el.scrollTop + this.bandCenter - this.padSize - (this.itemHeight / 2)) / this.itemHeight,
+      );
+      const value = this.valueFromIndex(snapIndex);
+      if (value !== undefined) this.setValue(value);
+    }
+
+    valueFromIndex(index) {
+      const start = this.pad;
+      const end = this.pad + this.values.length - 1;
+      if (index < start) return this.values[0];
+      if (index > end) return this.values[this.values.length - 1];
+      return this.values[index - this.pad];
+    }
+
+    refreshLook() {
+      // 横条中心：传入的 bandCenter
+      const center = this.el.scrollTop + this.bandCenter;
+      const maxInfluence = this.itemHeight * 3;
+      const items = Array.from(this.track.querySelectorAll('.wheel-item'));
+      items.forEach((item, idx) => {
+        const itemCenter = this.padSize + idx * this.itemHeight + this.itemHeight / 2;
+        const dist = Math.abs(itemCenter - center);
+        const t = Math.min(dist / maxInfluence, 1);
+        const scale = 1.3 - 0.7 * t;
+        const opacity = 0.2 + 0.8 * (1 - t);
+        item.style.transform = `scale(${scale})`;
+        item.style.opacity = opacity.toFixed(2);
+      });
+    }
+  }
+
+  function dayValuesFor(year, month) {
+    const dim = daysInMonth(year, month);
+    return Array.from({ length: dim }, (_, i) => String(i + 1).padStart(2, '0'));
+  }
+
+  function daysInMonth(year, month) {
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  }
+
+  function currentPreset() {
+    const now = new Date();
+    return {
+      year: String(now.getFullYear()),
+      month: String(now.getMonth() + 1).padStart(2, '0'),
+      day: String(now.getDate()).padStart(2, '0'),
+    };
+  }
+
+  function toUtcDate(obj) {
+    const y = Number(obj.year);
+    const m = Number(obj.month);
+    const d = Number(obj.day);
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+
+  function diffSummary(aDate, bDate) {
+    const diffMs = bDate - aDate;
+    const days = Math.round(diffMs / 86_400_000);
+    const weeks = days / 7;
+    const months = diffMs / (86_400_000 * 30.4375);
+    const years = diffMs / (86_400_000 * 365.25);
+    return { days, weeks, months, years };
+  }
+
+    function initPicker(root, key) {
+      const wheels = {};
+      const display = root.querySelector('.time-input');
+      const resetBtn = root.querySelector('.reset-btn');
+      const bandEl = root.querySelector('.selection-band');
+
+    const bandCenterFor = (wheelEl) => {
+      if (!bandEl || !wheelEl) return wheelEl?.clientHeight / 2 || ITEM_HEIGHT * 3.5;
+      const bandRect = bandEl.getBoundingClientRect();
+      const wheelRect = wheelEl.getBoundingClientRect();
+      return (bandRect.top + bandRect.height / 2) - wheelRect.top;
+    };
+
+    const updateDisplay = () => {
+      display.value = `${wheels.year.value}/${wheels.month.value}/${wheels.day.value}`;
+    };
+
+      const updateDays = () => {
+        const y = Number(wheels.year.value);
+        const m = Number(wheels.month.value);
+        const currentDay = wheels.day.value;
+        const list = dayValuesFor(y, m);
+        const nextDay = list.includes(currentDay) ? currentDay : list[list.length - 1];
+        const dayEl = wheels.day.el;
+        dayEl.classList.add('no-anim');
+        wheels.day.setValues(list, nextDay, true);
+        requestAnimationFrame(() => dayEl.classList.remove('no-anim'));
+      };
+
+    const preset = currentPreset();
+    const yearEl = root.querySelector('[data-wheel="year"]');
+    const monthEl = root.querySelector('[data-wheel="month"]');
+    const dayEl = root.querySelector('[data-wheel="day"]');
+    wheels.year = new Wheel(
+      yearEl,
+      { values: yearValues, value: preset.year, onChange: () => { updateDays(); updateDisplay(); updateSummary(); }, bandCenter: bandCenterFor(yearEl) },
+    );
+    wheels.month = new Wheel(
+      monthEl,
+      { values: monthValues, value: preset.month, onChange: () => { updateDays(); updateDisplay(); updateSummary(); }, bandCenter: bandCenterFor(monthEl) },
+    );
+    wheels.day = new Wheel(
+      dayEl,
+      { values: dayValuesFor(Number(preset.year), Number(preset.month)), value: preset.day, onChange: () => { updateDisplay(); updateSummary(); }, bandCenter: bandCenterFor(dayEl) },
+    );
+
+    [wheels.year, wheels.month, wheels.day].forEach((wheel) => enableDragScroll(wheel.el, wheel));
+    updateDisplay();
+
+    const applyInput = () => {
+      const raw = display.value.trim();
+      if (!raw) { updateDisplay(); return; }
+      const parts = raw.split(/[^0-9]+/).filter(Boolean);
+      if (parts.length < 3) { updateDisplay(); return; }
+      const [yStr, mStr, dStr] = parts;
+      const y = Number(yStr);
+      const m = Number(mStr);
+      const d = Number(dStr);
+      if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) { updateDisplay(); return; }
+      const paddedM = String(m).padStart(2, '0');
+      const paddedD = String(d).padStart(2, '0');
+      const candidate = new Date(Date.UTC(y, m - 1, d));
+      if (candidate.getUTCFullYear() !== y || candidate.getUTCMonth() !== m - 1 || candidate.getUTCDate() !== d) { updateDisplay(); return; }
+      wheels.year.setValue(String(y), true);
+      wheels.month.setValue(paddedM, true);
+      wheels.day.setValues(dayValuesFor(y, m), paddedD, true);
+      updateDisplay();
+      updateSummary();
+    };
+
+    display.addEventListener('blur', applyInput);
+    display.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyInput();
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      const p = currentPreset();
+      wheels.year.setValue(p.year, true);
+      wheels.month.setValue(p.month, true);
+      wheels.day.setValues(dayValuesFor(Number(p.year), Number(p.month)), p.day, true);
+      updateDisplay();
+      updateSummary();
+    });
+
+    return {
+      getDate() {
+        return {
+          year: wheels.year.value,
+          month: wheels.month.value,
+          day: wheels.day.value,
+        };
+      },
+      setDate(y, m, d) {
+        const paddedM = String(m).padStart(2, '0');
+        const paddedD = String(d).padStart(2, '0');
+        wheels.year.setValue(String(y), true);
+        wheels.month.setValue(paddedM, true);
+        wheels.day.setValues(dayValuesFor(y, m), paddedD, true);
+        updateDisplay();
+        updateSummary();
+      },
+    };
+  }
+
+  const pickers = {};
+  function applyDiffInput(unit, rawVal) {
+    if (!pickers.left || !pickers.right) return;
+    const signBtn = document.getElementById('diff-sign');
+    const signInner = signBtn?.querySelector('.inner');
+    const sign = signInner && signInner.textContent === MINUS_SIGN ? -1 : 1;
+    const value = Math.abs(Number(rawVal));
+    if (!Number.isFinite(value)) return;
+    const anchorKey = 'left'; // 永远以左侧为锚点
+    const targetKey = 'right';
+      const anchorDate = toUtcDate(pickers[anchorKey].getDate());
+      if (!anchorDate) return;
+      let deltaDays = 0;
+      if (unit === 'days') deltaDays = value;
+      else if (unit === 'weeks') deltaDays = value * 7;
+      else if (unit === 'months') deltaDays = value * 30.4375;
+      else if (unit === 'years') deltaDays = value * 365.25;
+      deltaDays *= sign;
+      const targetMs = anchorDate.getTime() + deltaDays * 86_400_000;
+      const target = new Date(targetMs);
+      pickers[targetKey].setDate(
+        target.getUTCFullYear(),
+        target.getUTCMonth() + 1,
+        target.getUTCDate(),
+      );
+    }
+
+  function updateSummary() {
+    if (!pickers.left || !pickers.right) return;
+    const start = toUtcDate(pickers.left.getDate());
+    const end = toUtcDate(pickers.right.getDate());
+    const { days, weeks, months, years } = diffSummary(start, end);
+    const smart = (v) => {
+      if (v === 0) return '0';
+      return v.toFixed(2).replace(/\.?0+$/, '');
+    };
+    const setText = (id, value, formatter = (v) => v) => {
+      const el = document.getElementById(id);
+      if (el) el.value = formatter(Math.abs(value));
+    };
+    const signBtn = document.getElementById('diff-sign');
+    const signInner = signBtn?.querySelector('.inner');
+    if (signInner) {
+      if (days > 0) signInner.textContent = PLUS_SIGN;
+      else if (days < 0) signInner.textContent = MINUS_SIGN;
+      // 当天数为 0 时，保留当前符号，允许手动切换
+    }
+    setText('diff-days', days);
+    setText('diff-weeks', weeks, smart);
+    setText('diff-months', months, smart);
+    setText('diff-years', years, smart);
+  }
+
+  document.querySelectorAll('.shell[data-picker]').forEach((root) => {
+    const key = root.getAttribute('data-picker');
+    pickers[key] = initPicker(root, key);
+  });
+
+  const signBtn = document.getElementById('diff-sign');
+  const signInner = signBtn?.querySelector('.inner');
+  if (signBtn && signInner) {
+    signBtn.addEventListener('click', () => {
+      signInner.textContent = signInner.textContent === MINUS_SIGN ? PLUS_SIGN : MINUS_SIGN;
+      const activeInput = document.getElementById(`diff-${lastDiffUnit}`) || document.getElementById('diff-days');
+      if (activeInput) applyDiffInput(activeInput.dataset.unit, activeInput.value);
+    });
+  }
+
+  document.querySelectorAll('.metric-input').forEach((input) => {
+    input.addEventListener('focus', (e) => { lastDiffUnit = e.target.dataset.unit; });
+    input.addEventListener('blur', (e) => {
+      lastDiffUnit = e.target.dataset.unit;
+      applyDiffInput(e.target.dataset.unit, e.target.value);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        lastDiffUnit = e.target.dataset.unit;
+        applyDiffInput(e.target.dataset.unit, e.target.value);
+      }
+    });
+  });
+
+  updateSummary();
+</script>
+
+</body>
+</html>
